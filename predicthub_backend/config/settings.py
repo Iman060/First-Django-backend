@@ -9,6 +9,9 @@ import environ
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Use SQLite by default for local development if USE_SQLITE is not explicitly disabled
+USE_SQLITE = os.getenv("USE_SQLITE", "1") == "1"
+
 # Initialize environment variables
 env = environ.Env(
     DEBUG=(bool, False)
@@ -85,16 +88,24 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 # Database
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': env('DB_NAME', default='predicthub_db'),
-        'USER': env('DB_USER', default='postgres'),
-        'PASSWORD': env('DB_PASSWORD', default='postgres'),
-        'HOST': env('DB_HOST', default='localhost'),
-        'PORT': env('DB_PORT', default='5432'),
+if USE_SQLITE:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": "predicthub",
+            "USER": "postgres",
+            "PASSWORD": "CHANGE_ME",
+            "HOST": "localhost",
+            "PORT": "5432",
+        }
+    }
 
 # Custom User Model
 AUTH_USER_MODEL = 'users.User'

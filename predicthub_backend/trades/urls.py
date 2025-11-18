@@ -8,7 +8,7 @@ router.register(r'', TradeViewSet, basename='trade')
 app_name = 'trades'
 
 urlpatterns = [
-    path('', include(router.urls)),
+    path('', include(router.urls)),  # GET /trades/, POST /trades/, GET /trades/{id}/
     path('user/', user_trades, name='user_trades'),
 ]
 

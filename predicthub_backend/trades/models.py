@@ -30,6 +30,8 @@ class Trade(models.Model):
         indexes = [
             models.Index(fields=['user', '-created_at']),
             models.Index(fields=['market', '-created_at']),
+            models.Index(fields=['outcome_type', '-created_at']),
+            models.Index(fields=['trade_type', '-created_at']),
         ]
     
     def __str__(self):

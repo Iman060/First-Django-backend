@@ -25,6 +25,7 @@ class Dispute(models.Model):
         indexes = [
             models.Index(fields=['market', 'status']),
             models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['status', '-created_at']),
         ]
     
     def __str__(self):

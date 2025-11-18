@@ -1,12 +1,14 @@
 from rest_framework import viewsets, status, permissions
-from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.response import Response
-from django.db import transaction
+from rest_framework.decorators import api_view, permission_classes
+from django.core.exceptions import ValidationError
 from decimal import Decimal
 from .models import Trade
 from .serializers import TradeSerializer, TradeCreateSerializer
-from markets.models import Market, OutcomeToken, PriceHistory
+from markets.models import Market
 from positions.models import Position
+from positions.serializers import PositionSerializer
+from .services import TradeExecutionService
+from utils.serializer import success, error
 
 
 class TradeViewSet(viewsets.ReadOnlyModelViewSet):
@@ -23,138 +25,90 @@ class TradeViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(market_id=market_id)
         
         return queryset
+    
+    def create(self, request, *args, **kwargs):
+        """Handle POST /trades/ - Create a new trade"""
+        return create_trade(request)
 
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
-def create_trade(request, market_id):
-    """Create a trade for a specific market"""
-    serializer = TradeCreateSerializer(data=request.data)
-    serializer.is_valid(raise_exception=True)
+def create_trade(request):
+    """Create a trade using TradeExecutionService"""
+    # Validate user (already authenticated via permission_classes)
+    user = request.user
     
+    # Validate request data
+    serializer = TradeCreateSerializer(data=request.data)
+    if not serializer.is_valid():
+        return error(f"Validation error: {serializer.errors}", status.HTTP_400_BAD_REQUEST)
+    
+    # Extract and validate market
+    market_id = serializer.validated_data.get('market_id')
     try:
         market = Market.objects.get(id=market_id)
     except Market.DoesNotExist:
-        return Response(
-            {'error': 'Market not found'},
-            status=status.HTTP_404_NOT_FOUND
-        )
+        return error('Market not found', status.HTTP_400_BAD_REQUEST)
     
+    # Validate market status
     if market.status != 'active':
-        return Response(
-            {'error': 'Market is not active'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return error('Market is not active', status.HTTP_400_BAD_REQUEST)
     
-    outcome_type = serializer.validated_data['outcome_type']
-    trade_type = serializer.validated_data['trade_type']
-    amount_staked = Decimal(str(serializer.validated_data['amount_staked']))
+    # Extract and validate outcome_type
+    outcome_type = serializer.validated_data.get('outcome_type')
+    if outcome_type not in ['YES', 'NO']:
+        return error('Invalid outcome_type. Must be YES or NO', status.HTTP_400_BAD_REQUEST)
     
-    with transaction.atomic():
-        # Get or create outcome tokens
-        yes_token, _ = OutcomeToken.objects.get_or_create(
-            market=market,
-            outcome_type='YES',
-            defaults={'supply': 0, 'price': 0.5}
-        )
-        no_token, _ = OutcomeToken.objects.get_or_create(
-            market=market,
-            outcome_type='NO',
-            defaults={'supply': 0, 'price': 0.5}
-        )
-        
-        # Calculate current prices using AMM
-        total_liquidity = yes_token.supply + no_token.supply
-        if total_liquidity == 0:
-            # Initialize with equal liquidity
-            yes_token.supply = amount_staked / 2
-            no_token.supply = amount_staked / 2
-            yes_price = Decimal('0.5')
-            no_price = Decimal('0.5')
-        else:
-            yes_price = yes_token.supply / total_liquidity
-            no_price = no_token.supply / total_liquidity
-        
-        # Execute trade
-        target_token = yes_token if outcome_type == 'YES' else no_token
-        price_at_execution = yes_price if outcome_type == 'YES' else no_price
-        
-        if trade_type == 'buy':
-            # Calculate tokens to receive
-            tokens_amount = amount_staked / price_at_execution if price_at_execution > 0 else amount_staked * 2
-            target_token.supply += amount_staked
-        else:  # sell
-            # User must have enough tokens
-            position, _ = Position.objects.get_or_create(
-                user=request.user,
-                market=market,
-                defaults={'yes_tokens': 0, 'no_tokens': 0, 'total_staked': 0}
-            )
-            
-            user_tokens = position.yes_tokens if outcome_type == 'YES' else position.no_tokens
-            if user_tokens < amount_staked:
-                return Response(
-                    {'error': 'Insufficient tokens'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            tokens_amount = amount_staked * price_at_execution
-            target_token.supply -= amount_staked
-        
-        target_token.price = target_token.supply / (yes_token.supply + no_token.supply) if (yes_token.supply + no_token.supply) > 0 else Decimal('0.5')
-        target_token.save()
-        
-        # Update other token price
-        other_token = no_token if outcome_type == 'YES' else yes_token
-        other_token.price = other_token.supply / (yes_token.supply + no_token.supply) if (yes_token.supply + no_token.supply) > 0 else Decimal('0.5')
-        other_token.save()
-        
-        # Update market liquidity
-        market.liquidity_pool = yes_token.supply + no_token.supply
-        market.save()
-        
-        # Create trade record
-        trade = Trade.objects.create(
-            user=request.user,
+    # Extract trade details
+    trade_type = serializer.validated_data.get('trade_type')
+    amount = Decimal(str(serializer.validated_data.get('amount_staked')))
+    
+    # Convert trade_type to side (BUY/SELL)
+    if trade_type == 'buy':
+        side = 'BUY'
+    elif trade_type == 'sell':
+        side = 'SELL'
+    else:
+        return error('Invalid trade_type. Must be buy or sell', status.HTTP_400_BAD_REQUEST)
+    
+    # Execute trade using TradeExecutionService
+    try:
+        result = TradeExecutionService.execute_trade(
+            user=user,
             market=market,
             outcome_type=outcome_type,
-            trade_type=trade_type,
-            amount_staked=amount_staked,
-            tokens_amount=tokens_amount,
-            price_at_execution=price_at_execution
+            amount=amount,
+            side=side
         )
-        
-        # Update position
-        position, _ = Position.objects.get_or_create(
-            user=request.user,
-            market=market,
-            defaults={'yes_tokens': 0, 'no_tokens': 0, 'total_staked': 0}
-        )
-        
-        if trade_type == 'buy':
-            if outcome_type == 'YES':
-                position.yes_tokens += tokens_amount
-            else:
-                position.no_tokens += tokens_amount
-            position.total_staked += amount_staked
-        else:  # sell
-            if outcome_type == 'YES':
-                position.yes_tokens -= amount_staked
-            else:
-                position.no_tokens -= amount_staked
-            position.total_staked -= amount_staked
-        
-        position.save()
-        
-        # Record price history
-        PriceHistory.objects.create(
-            market=market,
-            yes_price=yes_token.price,
-            no_price=no_token.price
-        )
+    except ValidationError as e:
+        return error(str(e), status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return error(f'Trade execution failed: {str(e)}', status.HTTP_400_BAD_REQUEST)
     
-    serializer = TradeSerializer(trade)
-    return Response(serializer.data, status=status.HTTP_201_CREATED)
+    # Get the created trade
+    try:
+        trade = Trade.objects.get(id=result['trade_id'])
+    except Trade.DoesNotExist:
+        return error('Trade was created but could not be retrieved', status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    # Get the updated position
+    try:
+        position = Position.objects.get(user=user, market=market)
+    except Position.DoesNotExist:
+        return error('Position was created but could not be retrieved', status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    # Serialize trade and position
+    trade_serializer = TradeSerializer(trade)
+    position_serializer = PositionSerializer(position)
+    
+    # Prepare response data
+    response_data = {
+        'trade': trade_serializer.data,
+        'position': position_serializer.data,
+        'price': result['prices']
+    }
+    
+    return success(response_data)
 
 
 @api_view(['GET'])

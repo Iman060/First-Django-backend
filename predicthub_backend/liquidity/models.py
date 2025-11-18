@@ -22,6 +22,7 @@ class LiquidityEvent(models.Model):
         indexes = [
             models.Index(fields=['market', '-created_at']),
             models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['event_type', '-created_at']),
         ]
     
     def __str__(self):

@@ -16,6 +16,11 @@ class User(AbstractUser):
     class Meta:
         db_table = 'users'
         ordering = ['-total_points']
+        indexes = [
+            models.Index(fields=['email']),
+            models.Index(fields=['-total_points']),
+            models.Index(fields=['-created_at']),
+        ]
     
     def __str__(self):
         return self.username

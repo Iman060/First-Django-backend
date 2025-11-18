@@ -18,7 +18,8 @@ class Position(models.Model):
         unique_together = ['user', 'market']
         indexes = [
             models.Index(fields=['user', '-updated_at']),
-            models.Index(fields=['market']),
+            models.Index(fields=['market', '-updated_at']),
+            models.Index(fields=['user', 'market']),
         ]
     
     def __str__(self):

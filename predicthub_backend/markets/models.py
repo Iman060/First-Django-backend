@@ -42,6 +42,8 @@ class Market(models.Model):
         indexes = [
             models.Index(fields=['status', '-created_at']),
             models.Index(fields=['category', 'status']),
+            models.Index(fields=['ends_at']),
+            models.Index(fields=['created_by']),
         ]
     
     def __str__(self):
@@ -83,6 +85,7 @@ class OutcomeToken(models.Model):
         unique_together = ['market', 'outcome_type']
         indexes = [
             models.Index(fields=['market', 'outcome_type']),
+            models.Index(fields=['market', '-updated_at']),
         ]
     
     def __str__(self):
@@ -100,6 +103,7 @@ class PriceHistory(models.Model):
         ordering = ['-timestamp']
         indexes = [
             models.Index(fields=['market', '-timestamp']),
+            models.Index(fields=['-timestamp']),
         ]
     
     def __str__(self):
@@ -117,6 +121,11 @@ class Resolution(models.Model):
     
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['market']),
+            models.Index(fields=['resolved_outcome']),
+            models.Index(fields=['-created_at']),
+        ]
     
     def __str__(self):
         return f"{self.market.title} - {self.resolved_outcome}"

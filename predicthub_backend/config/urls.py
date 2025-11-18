@@ -8,6 +8,8 @@ from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 from strawberry.django.views import GraphQLView
 from .graphql_schema import schema
+from indexer.views import OnchainWebhookView
+from webhooks.onchain_webhook import onchain_webhook
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -32,6 +34,8 @@ urlpatterns = [
     
     # GraphQL
     path('graphql/', GraphQLView.as_view(schema=schema)),
+    path('api/webhook/onchain/', OnchainWebhookView.as_view(), name='onchain-webhook'),
+    path('webhooks/onchain/', onchain_webhook, name='onchain-webhook-new'),
     
     # API Routes
     path('auth/', include('users.urls')),

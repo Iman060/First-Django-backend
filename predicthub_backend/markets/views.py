@@ -1,6 +1,5 @@
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
-from rest_framework.response import Response
 from django.utils import timezone
 from datetime import timedelta
 from django.conf import settings
@@ -11,6 +10,7 @@ from .serializers import (
 )
 from trades.models import Trade
 from positions.models import Position
+from utils.serializer import success, error
 
 
 class MarketViewSet(viewsets.ReadOnlyModelViewSet):
@@ -39,14 +39,14 @@ class MarketViewSet(viewsets.ReadOnlyModelViewSet):
             ends_at__gt=timezone.now()
         ).order_by('-liquidity_pool')[:10]
         serializer = self.get_serializer(featured, many=True)
-        return Response(serializer.data)
+        return success(serializer.data)
     
     @action(detail=False, methods=['get'])
     def categories(self, request):
         """Get all market categories"""
         categories = MarketCategory.objects.all()
         serializer = MarketCategorySerializer(categories, many=True)
-        return Response(serializer.data)
+        return success(serializer.data)
     
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAdminUser])
     def resolve(self, request, pk=None):
@@ -54,17 +54,11 @@ class MarketViewSet(viewsets.ReadOnlyModelViewSet):
         market = self.get_object()
         
         if market.status == 'resolved':
-            return Response(
-                {'error': 'Market already resolved'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return error('Market already resolved', status.HTTP_400_BAD_REQUEST)
         
         resolved_outcome = request.data.get('resolved_outcome')
         if resolved_outcome not in ['YES', 'NO']:
-            return Response(
-                {'error': 'Invalid outcome. Must be YES or NO'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return error('Invalid outcome. Must be YES or NO', status.HTTP_400_BAD_REQUEST)
         
         # Create resolution
         dispute_window = timezone.now() + timedelta(hours=settings.MARKET_DISPUTE_WINDOW_HOURS)
@@ -86,7 +80,7 @@ class MarketViewSet(viewsets.ReadOnlyModelViewSet):
         settle_market_positions.delay(market.id, resolved_outcome)
         
         serializer = ResolutionSerializer(resolution)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return success(serializer.data)
     
     @action(detail=True, methods=['get'])
     def trades(self, request, pk=None):
@@ -107,7 +101,7 @@ class MarketViewSet(viewsets.ReadOnlyModelViewSet):
         """Get user's position for a specific market"""
         market = self.get_object()
         if not request.user.is_authenticated:
-            return Response({'error': 'Authentication required'}, status=status.HTTP_401_UNAUTHORIZED)
+            return error('Authentication required', status.HTTP_401_UNAUTHORIZED)
         
         position, created = Position.objects.get_or_create(
             user=request.user,
@@ -117,7 +111,7 @@ class MarketViewSet(viewsets.ReadOnlyModelViewSet):
         
         from positions.serializers import PositionSerializer
         serializer = PositionSerializer(position)
-        return Response(serializer.data)
+        return success(serializer.data)
 
 
 class MarketCreateViewSet(viewsets.ModelViewSet):
