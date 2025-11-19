@@ -4,7 +4,14 @@ from django.db import models
 
 class User(AbstractUser):
     """Custom User model with prediction market specific fields"""
+    
+    ROLE_CHOICES = [
+        ('user', 'User'),
+        ('admin', 'Admin'),
+    ]
+    
     email = models.EmailField(unique=True)
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='user')
     total_points = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     win_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0.0)
     streak = models.IntegerField(default=0)

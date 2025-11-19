@@ -3,6 +3,7 @@ URL configuration for predicthub_backend project.
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.http import JsonResponse
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
@@ -10,6 +11,28 @@ from strawberry.django.views import GraphQLView
 from .graphql_schema import schema
 from indexer.views import OnchainWebhookView
 from webhooks.onchain_webhook import onchain_webhook
+
+
+def api_root(request):
+    """Root API endpoint with API information"""
+    return JsonResponse({
+        'name': 'PredictHub API',
+        'version': '1.0.0',
+        'description': 'Community Prediction Market Backend API',
+        'endpoints': {
+            'authentication': '/auth/',
+            'markets': '/markets/',
+            'trades': '/trades/',
+            'leaderboard': '/leaderboard/',
+            'admin': '/admin/',
+            'api_docs': '/swagger/',
+            'graphql': '/graphql/',
+        },
+        'documentation': {
+            'swagger': '/swagger/',
+            'redoc': '/redoc/',
+        }
+    })
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -25,6 +48,7 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
+    path('', api_root, name='api-root'),
     path('admin/', admin.site.urls),
     
     # API Documentation
@@ -38,10 +62,9 @@ urlpatterns = [
     path('webhooks/onchain/', onchain_webhook, name='onchain-webhook-new'),
     
     # API Routes
-    path('auth/', include('users.urls')),
+    path('auth/', include('users.urls')),  # Auth endpoints (signup, login, me)
     path('markets/', include('markets.urls')),
     path('trades/', include('trades.urls')),
-    path('users/', include('users.urls')),
     path('leaderboard/', include('analytics.urls')),
     path('webhook/', include('indexer.urls')),
 ]
